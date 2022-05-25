@@ -5,6 +5,8 @@
 using System;
 using System.Diagnostics;
 using Microsoft.Toolkit.Uwp.UI.Automation.Peers;
+using Microsoft.Toolkit.Uwp.UI.Utilities;
+using Microsoft.Toolkit.Uwp.Utilities;
 using Windows.Foundation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Automation.Peers;
@@ -142,6 +144,7 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
             double dragIndicatorLeftEdge = 0;
             double frozenLeftEdge = 0;
             double scrollingLeftEdge = -this.OwningGrid.HorizontalOffset;
+            double cellLeftEdge;
             foreach (DataGridColumn dataGridColumn in this.OwningGrid.ColumnsInternal.GetVisibleColumns())
             {
                 DataGridColumnHeader columnHeader = dataGridColumn.HeaderCell;
@@ -149,23 +152,21 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
 
                 if (dataGridColumn.IsFrozen)
                 {
-                    columnHeader.Arrange(new Rect(frozenLeftEdge, 0, dataGridColumn.LayoutRoundedWidth, finalSize.Height));
-                    columnHeader.Clip = null; // The layout system could have clipped this because it's not aware of our render transform
-                    if (this.DragColumn == dataGridColumn && this.DragIndicator != null)
-                    {
-                        dragIndicatorLeftEdge = frozenLeftEdge + this.DragIndicatorOffset;
-                    }
+                    cellLeftEdge = frozenLeftEdge;
 
+                    // This can happen before or after clipping because frozen cells aren't clipped
                     frozenLeftEdge += dataGridColumn.ActualWidth;
                 }
                 else
                 {
-                    columnHeader.Arrange(new Rect(scrollingLeftEdge, 0, dataGridColumn.LayoutRoundedWidth, finalSize.Height));
-                    EnsureColumnHeaderClip(columnHeader, dataGridColumn.ActualWidth, finalSize.Height, frozenLeftEdge, scrollingLeftEdge);
-                    if (this.DragColumn == dataGridColumn && this.DragIndicator != null)
-                    {
-                        dragIndicatorLeftEdge = scrollingLeftEdge + this.DragIndicatorOffset;
-                    }
+                    cellLeftEdge = scrollingLeftEdge;
+                }
+
+                columnHeader.Arrange(new Rect(cellLeftEdge, 0, dataGridColumn.LayoutRoundedWidth, finalSize.Height));
+                EnsureColumnHeaderClip(columnHeader, dataGridColumn.ActualWidth, finalSize.Height, frozenLeftEdge, scrollingLeftEdge);
+                if (this.DragColumn == dataGridColumn && this.DragIndicator != null)
+                {
+                    dragIndicatorLeftEdge = cellLeftEdge + this.DragIndicatorOffset;
                 }
 
                 scrollingLeftEdge += dataGridColumn.ActualWidth;
@@ -207,23 +208,6 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
             }
 
             return finalSize;
-        }
-
-        private static void EnsureColumnHeaderClip(DataGridColumnHeader columnHeader, double width, double height, double frozenLeftEdge, double columnHeaderLeftEdge)
-        {
-            // Clip the cell only if it's scrolled under frozen columns.  Unfortunately, we need to clip in this case
-            // because cells could be transparent
-            if (frozenLeftEdge > columnHeaderLeftEdge)
-            {
-                RectangleGeometry rg = new RectangleGeometry();
-                double xClip = Math.Min(width, frozenLeftEdge - columnHeaderLeftEdge);
-                rg.Rect = new Rect(xClip, 0, width - xClip, height);
-                columnHeader.Clip = rg;
-            }
-            else
-            {
-                columnHeader.Clip = null;
-            }
         }
 
         /// <summary>
@@ -310,13 +294,14 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
                 autoSizeHeight = false;
             }
 
+            double frozenLeftEdge = 0;
             double totalDisplayWidth = 0;
+            double scrollingLeftEdge = -this.OwningGrid.HorizontalOffset;
             this.OwningGrid.ColumnsInternal.EnsureVisibleEdgedColumnsWidth();
             DataGridColumn lastVisibleColumn = this.OwningGrid.ColumnsInternal.LastVisibleColumn;
             foreach (DataGridColumn column in this.OwningGrid.ColumnsInternal.GetVisibleColumns())
             {
                 // Measure each column header
-                bool autoGrowWidth = column.Width.IsAuto || column.Width.IsSizeToHeader;
                 DataGridColumnHeader columnHeader = column.HeaderCell;
                 if (column != lastVisibleColumn)
                 {
@@ -335,17 +320,22 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
                     column.SetWidthDisplayValue(newDisplayWidth);
                 }
 
-                // If we're auto-growing the column based on the header content, we want to measure it at its maximum value
-                if (autoGrowWidth)
+                bool shouldDisplayColumn = column.ShouldDisplay(frozenLeftEdge, scrollingLeftEdge);
+                if (shouldDisplayColumn)
                 {
-                    columnHeader.Measure(new Size(column.ActualMaxWidth, double.PositiveInfinity));
-                    this.OwningGrid.AutoSizeColumn(column, columnHeader.DesiredSize.Width);
-                    column.ComputeLayoutRoundedWidth(totalDisplayWidth);
-                }
-                else if (!this.OwningGrid.UsesStarSizing)
-                {
-                    column.ComputeLayoutRoundedWidth(totalDisplayWidth);
-                    columnHeader.Measure(new Size(column.LayoutRoundedWidth, double.PositiveInfinity));
+                    // If we're auto-growing the column based on the header content, we want to measure it at its maximum value
+                    bool autoGrowWidth = column.Width.IsAuto || column.Width.IsSizeToHeader;
+                    if (autoGrowWidth)
+                    {
+                        columnHeader.Measure(new Size(column.ActualMaxWidth, double.PositiveInfinity));
+                        this.OwningGrid.AutoSizeColumn(column, columnHeader.DesiredSize.Width);
+                        column.ComputeLayoutRoundedWidth(totalDisplayWidth);
+                    }
+                    else if (!this.OwningGrid.UsesStarSizing)
+                    {
+                        column.ComputeLayoutRoundedWidth(totalDisplayWidth);
+                        columnHeader.Measure(new Size(column.LayoutRoundedWidth, double.PositiveInfinity));
+                    }
                 }
 
                 // We need to track the largest height in order to auto-size
@@ -354,6 +344,12 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
                     height = Math.Max(height, columnHeader.DesiredSize.Height);
                 }
 
+                if (column.IsFrozen)
+                {
+                    frozenLeftEdge += column.ActualWidth;
+                }
+
+                scrollingLeftEdge += column.ActualWidth;
                 totalDisplayWidth += column.ActualWidth;
             }
 
@@ -416,6 +412,28 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
         protected override AutomationPeer OnCreateAutomationPeer()
         {
             return new DataGridColumnHeadersPresenterAutomationPeer(this);
+        }
+
+        private static void EnsureColumnHeaderClip(DataGridColumnHeader columnHeader, double width, double height, double frozenLeftEdge, double columnHeaderLeftEdge)
+        {
+            // Clip the cell only if it's scrolled under frozen columns.  Unfortunately, we need to clip in this case
+            // because cells could be transparent
+            if (!columnHeader.OwningColumn.IsFrozen && frozenLeftEdge > columnHeaderLeftEdge)
+            {
+                double xClip = Math.Min(width, frozenLeftEdge - columnHeaderLeftEdge);
+                Rect clipRect = new Rect(xClip, 0, width - xClip, height);
+                if (columnHeader.Clip?.Rect != clipRect)
+                {
+                    columnHeader.Clip = new RectangleGeometry()
+                    {
+                        Rect = clipRect,
+                    };
+                }
+            }
+            else
+            {
+                columnHeader.Clip = null;
+            }
         }
     }
 }

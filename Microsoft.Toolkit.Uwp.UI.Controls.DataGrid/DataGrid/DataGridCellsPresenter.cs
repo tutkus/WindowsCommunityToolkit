@@ -3,8 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
-using System.Diagnostics;
-using Microsoft.Toolkit.Uwp.Utilities;
+using Microsoft.Toolkit.Uwp.UI.Utilities;
 using Windows.Foundation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -96,11 +95,8 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
                     cellLeftEdge = scrollingLeftEdge;
                 }
 
-                if (cell.Visibility == Visibility.Visible)
-                {
-                    cell.Arrange(new Rect(cellLeftEdge, 0, column.LayoutRoundedWidth, finalSize.Height));
-                    EnsureCellClip(cell, column.ActualWidth, finalSize.Height, frozenLeftEdge, scrollingLeftEdge);
-                }
+                cell.Arrange(new Rect(cellLeftEdge, 0, column.LayoutRoundedWidth, finalSize.Height));
+                EnsureCellClip(cell, column.ActualWidth, finalSize.Height, frozenLeftEdge, scrollingLeftEdge);
 
                 scrollingLeftEdge += column.ActualWidth;
                 column.IsInitialDesiredWidthDetermined = true;
@@ -220,7 +216,7 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
                 DataGridCell cell = this.OwningRow.Cells[column.Index];
 
                 // Measure the entire first row to make the horizontal scrollbar more accurate
-                bool shouldDisplayCell = ShouldDisplayCell(column, frozenLeftEdge, scrollingLeftEdge) || this.OwningRow.Index == 0;
+                bool shouldDisplayCell = column.ShouldDisplay(frozenLeftEdge, scrollingLeftEdge) || this.OwningRow.Index == 0;
                 EnsureCellDisplay(cell, shouldDisplayCell);
                 if (shouldDisplayCell)
                 {
@@ -316,25 +312,6 @@ namespace Microsoft.Toolkit.Uwp.UI.Controls.Primitives
                     this.OwningRow.Cells[column.Index].Recycle();
                 }
             }
-        }
-
-        private bool ShouldDisplayCell(DataGridColumn column, double frozenLeftEdge, double scrollingLeftEdge)
-        {
-            DiagnosticsDebug.Assert(this.OwningGrid != null, "Expected non-null owning DataGrid.");
-            DiagnosticsDebug.Assert(this.OwningGrid.HorizontalAdjustment >= 0, "Expected owning positive DataGrid.HorizontalAdjustment.");
-            DiagnosticsDebug.Assert(this.OwningGrid.HorizontalAdjustment <= this.OwningGrid.HorizontalOffset, "Expected owning DataGrid.HorizontalAdjustment smaller than or equal to DataGrid.HorizontalOffset.");
-
-            if (column.Visibility != Visibility.Visible)
-            {
-                return false;
-            }
-
-            scrollingLeftEdge += this.OwningGrid.HorizontalAdjustment;
-            double leftEdge = column.IsFrozen ? frozenLeftEdge : scrollingLeftEdge;
-            double rightEdge = leftEdge + column.ActualWidth;
-            return DoubleUtil.GreaterThan(rightEdge, 0) &&
-                DoubleUtil.LessThanOrClose(leftEdge, this.OwningGrid.CellsWidth) &&
-                DoubleUtil.GreaterThan(rightEdge, frozenLeftEdge); // scrolling column covered up by frozen column(s)
-        }
+        }        
     }
 }

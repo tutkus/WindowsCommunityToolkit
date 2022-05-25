@@ -8,11 +8,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using Microsoft.Toolkit.Uwp.UI.Controls;
 using Microsoft.Toolkit.Uwp.Utilities;
 using Windows.Foundation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
+
+using DiagnosticsDebug = System.Diagnostics.Debug;
 
 namespace Microsoft.Toolkit.Uwp.UI.Utilities
 {
@@ -252,6 +255,26 @@ namespace Microsoft.Toolkit.Uwp.UI.Utilities
                 _suspendedHandlers[obj] = new Dictionary<DependencyProperty, int>();
                 _suspendedHandlers[obj][dependencyProperty] = 1;
             }
+        }
+
+        internal static bool ShouldDisplay(this DataGridColumn column, double frozenLeftEdge, double scrollingLeftEdge)
+        {
+            DiagnosticsDebug.Assert(column.OwningGrid != null, "Expected non-null owning DataGrid.");
+            DiagnosticsDebug.Assert(column.OwningGrid.HorizontalAdjustment >= 0, "Expected owning positive DataGrid.HorizontalAdjustment.");
+            DiagnosticsDebug.Assert(column.OwningGrid.HorizontalAdjustment <= column.OwningGrid.HorizontalOffset, "Expected owning DataGrid.HorizontalAdjustment smaller than or equal to DataGrid.HorizontalOffset.");
+
+
+            if (column.Visibility != Visibility.Visible)
+            {
+                return false;
+            }
+
+            scrollingLeftEdge += column.OwningGrid.HorizontalAdjustment;
+            double leftEdge = column.IsFrozen ? frozenLeftEdge : scrollingLeftEdge;
+            double rightEdge = leftEdge + column.ActualWidth;
+            return DoubleUtil.GreaterThan(rightEdge, 0) &&
+                DoubleUtil.LessThanOrClose(leftEdge, column.OwningGrid.CellsWidth) &&
+                DoubleUtil.GreaterThan(rightEdge, frozenLeftEdge); // scrolling column covered up by frozen column(s)
         }
     }
 }
